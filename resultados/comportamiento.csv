@@ -1,0 +1,4 @@
+jefe,distancia_media_al_heroe,ajuste_punteria_medio_grados,velocidad_media_rel,disparos_por_segundo,embestidas_por_segundo,precision_embestida,danio_recibido_por_segundo,victorias
+"Red, generación 1",0.339,25.049,1.254,1.219,0.368,0.139,7.1,0.0
+Reglas fijas (manual),0.227,0.0,1.241,1.535,0.488,0.861,11.867,0.278
+Red evolucionada (campeón),0.175,18.156,1.492,1.525,0.573,0.713,10.73,0.92

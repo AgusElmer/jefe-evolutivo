@@ -1,0 +1,21 @@
+jefe                           héroe          victorias daño hecho duración
+Quieto (solo dispara)          agresivo              0%        5.8    12.2s
+Quieto (solo dispara)          francotirador         0%        4.3    12.6s
+Quieto (solo dispara)          escurridizo           0%        1.6    16.6s
+Quieto (solo dispara)          impredecible          0%        1.3    12.2s
+Reglas fijas (manual)          agresivo             34%       89.4    11.4s
+Reglas fijas (manual)          francotirador        24%       81.5    12.6s
+Reglas fijas (manual)          escurridizo          20%       79.1    12.1s
+Reglas fijas (manual)          impredecible         22%       82.0    12.7s
+Red, generación 1              agresivo              0%       43.3    16.7s
+Red, generación 1              francotirador         0%       23.7    27.3s
+Red, generación 1              escurridizo           0%       16.3    23.7s
+Red, generación 1              impredecible          0%       20.3    19.9s
+Red, generación 50             agresivo             73%       96.9    11.3s
+Red, generación 50             francotirador        52%       91.0    13.2s
+Red, generación 50             escurridizo          33%       85.4    13.0s
+Red, generación 50             impredecible         33%       86.4    13.9s
+Red evolucionada (campeón)     agresivo             98%       99.7     8.7s
+Red evolucionada (campeón)     francotirador        93%       98.5    10.1s
+Red evolucionada (campeón)     escurridizo          88%       98.4    10.3s
+Red evolucionada (campeón)     impredecible         88%       98.0    10.9s

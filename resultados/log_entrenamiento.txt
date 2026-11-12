@@ -1,0 +1,23 @@
+Neuroevolución: población 80, 341 genes por individuo, 200 generaciones, 6 combates por individuo
+gen    1 | aptitud máx     9.8 media   -25.4 | victorias: mejor 17% media 1% |     1s
+gen   11 | aptitud máx    53.5 media    -8.1 | victorias: mejor 33% media 6% |     8s
+gen   21 | aptitud máx    77.0 media    13.9 | victorias: mejor 50% media 10% |    15s
+gen   31 | aptitud máx    94.6 media    31.3 | victorias: mejor 67% media 18% |    22s
+gen   41 | aptitud máx   111.8 media    45.8 | victorias: mejor 83% media 24% |    28s
+gen   51 | aptitud máx   115.4 media    71.0 | victorias: mejor 83% media 44% |    34s
+gen   61 | aptitud máx   126.0 media    77.5 | victorias: mejor 100% media 49% |    39s
+gen   71 | aptitud máx   132.0 media    79.0 | victorias: mejor 100% media 51% |    46s
+gen   81 | aptitud máx   131.1 media    79.8 | victorias: mejor 100% media 52% |    51s
+gen   91 | aptitud máx   134.9 media    91.6 | victorias: mejor 100% media 62% |    57s
+gen  101 | aptitud máx   138.5 media    93.0 | victorias: mejor 100% media 62% |    62s
+gen  111 | aptitud máx   136.3 media    96.7 | victorias: mejor 100% media 66% |    67s
+gen  121 | aptitud máx   138.3 media   102.0 | victorias: mejor 100% media 71% |    71s
+gen  131 | aptitud máx   136.9 media   105.8 | victorias: mejor 100% media 74% |    76s
+gen  141 | aptitud máx   139.8 media   107.0 | victorias: mejor 100% media 74% |    81s
+gen  151 | aptitud máx   139.7 media   105.1 | victorias: mejor 100% media 72% |    85s
+gen  161 | aptitud máx   135.2 media   110.0 | victorias: mejor 100% media 78% |    89s
+gen  171 | aptitud máx   138.4 media   114.6 | victorias: mejor 100% media 81% |    93s
+gen  181 | aptitud máx   138.9 media   119.5 | victorias: mejor 100% media 85% |    97s
+gen  191 | aptitud máx   143.3 media   124.9 | victorias: mejor 100% media 89% |   101s
+gen  200 | aptitud máx   141.2 media   123.3 | victorias: mejor 100% media 88% |   105s
+Listo en 105s. Resultados en /mnt/d/Projects/InteligenciaArtificalTPFinal/jefe-evolutivo/resultados/
