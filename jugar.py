@@ -1,14 +1,20 @@
-"""¡Enfrentá vos mismo al jefe!
+"""Jugá contra el jefe, o mirá cómo pelea contra los héroes bot.
 
-    python jugar.py                 # contra el campeón
-    python jugar.py --gen 1         # contra el mejor jefe de la generación 1
-    python jugar.py --gen 50
-    python jugar.py --bot escurridizo   # mirar al jefe contra un héroe bot
+    python jugar.py                       # menú (o ./jugar.sh)
+    python jugar.py --gen 1               # directo contra el jefe de la generación 1
+    python jugar.py --bot escurridizo     # directo: campeón vs. bot
 
-Controles: WASD o flechas para moverse, apuntar con el mouse, clic (o barra
-espaciadora) para disparar. R reinicia, Esc sale.
+Menú: ↑/↓ elige el jefe, ←/→ elige quién pelea, Enter empieza.
+En combate: WASD/flechas para moverte, mouse para apuntar, clic o espacio para
+disparar. R reinicia, P pausa, S sonido, +/- velocidad (al mirar), Esc vuelve al menú.
+
+Cuando jugás vos, el combate dura 60 s y tus balas pegan más fuerte que las de
+los bots: el balance original está pensado para bots, que apuntan casi perfecto.
 """
 import argparse
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -18,86 +24,192 @@ from jefe import config as C
 from jefe.arena import Arena
 from jefe.jugadores import TODOS, HeroeBot
 from jefe.red import RedesEnLote
+from jefe.render import AZUL, BLANCO, GRIS, NARANJA, Escena, Sonidos
+from jefe.simulacion import politica_heroe_red
 
 R = Path(__file__).parent / "resultados"
-LADO = 640
+LADO = 700
+ANCHO, ALTO = LADO + 20, LADO + 60
+
+
+def cargar_jefes():
+    mejores = np.load(R / "mejores_por_generacion.npy")
+    jefes = [("Fácil · generación 1", mejores[0]),
+             ("Medio · generación 50", mejores[min(49, len(mejores) - 1)]),
+             ("Difícil · campeón", np.load(R / "campeon.npy"))]
+    for carpeta, nombre in (("coevolucion", "Coevolucionado"), ("en_vivo", "Tu evolución en vivo")):
+        archivo = R / carpeta / "jefe_final.npy"
+        if archivo.exists():
+            jefes.append((nombre, np.load(archivo)))
+    return jefes
+
+
+def cargar_heroes():
+    heroes = [("Jugador", None)] + [(f"Bot {e}", e) for e in TODOS]
+    for carpeta, nombre in (("coevolucion", "Héroe coevolucionado"), ("en_vivo", "Héroe de tu evolución")):
+        archivo = R / carpeta / "heroe_final.npy"
+        if archivo.exists():
+            heroes.append((nombre, np.load(archivo)))
+    return heroes
+
+
+def comando_humano(ar):
+    k = pygame.key.get_pressed()
+    vx = (k[pygame.K_d] or k[pygame.K_RIGHT]) - (k[pygame.K_a] or k[pygame.K_LEFT])
+    vy = (k[pygame.K_w] or k[pygame.K_UP]) - (k[pygame.K_s] or k[pygame.K_DOWN])
+    mx, my = pygame.mouse.get_pos()
+    ox, oy = (mx - 10) / LADO, 1 - (my - 10) / LADO
+    ang = np.arctan2(oy - ar.hy[0], ox - ar.hx[0])
+    disparar = pygame.mouse.get_pressed()[0] or k[pygame.K_SPACE]
+    return {"vx": np.array([float(vx)]), "vy": np.array([float(vy)]),
+            "disparar": np.array([bool(disparar)]), "angulo": np.array([ang])}
+
+
+class Combate:
+    def __init__(self, jefe, heroe, escena):
+        self.jefe, self.heroe = jefe, heroe
+        (self.nombre_j, genoma_j), (self.nombre_h, h) = jefe, heroe
+        self.humano = h is None
+        rng = np.random.default_rng()
+        if self.humano:
+            self.ar = Arena(1, rng, duracion=C.HUMANO_DURACION, heroe_danio=C.HUMANO_BALA_DANIO)
+            self.pol_h = comando_humano
+        elif isinstance(h, str):
+            self.ar, self.pol_h = Arena(1, rng), HeroeBot([h], rng)
+        else:
+            self.ar, self.pol_h = Arena(1, rng), politica_heroe_red(h, [0])
+        self.red = RedesEnLote(genoma_j, [0])
+        self.escena = escena
+        escena.reiniciar()
+        self.resultado = None
+
+    def paso(self):
+        if not self.ar.activa[0]:
+            return
+        self.ar.paso(self.red(self.ar.observar()), self.pol_h(self.ar))
+        self.escena.actualizar(self.ar.foto(0))
+        if not self.ar.activa[0]:
+            r = self.ar.resultados()
+            self.resultado = "heroe" if r["gana_heroe"][0] else ("jefe" if r["gana_jefe"][0] else "empate")
+
+    def mensaje(self):
+        if self.resultado is None:
+            return ""
+        if self.humano:
+            return {"heroe": "¡GANASTE!", "jefe": "TE DESTRUYÓ", "empate": "TIEMPO"}[self.resultado]
+        return {"heroe": "GANA EL HÉROE", "jefe": "GANA EL JEFE", "empate": "TIEMPO"}[self.resultado]
+
+
+def dibujar_menu(pantalla, fuentes, jefes, heroes, ij, ih, marcador):
+    f_t, f_m, f_c = fuentes
+    pantalla.fill((14, 14, 20))
+    t = f_t.render("JEFE EVOLUTIVO", True, NARANJA)
+    pantalla.blit(t, (ANCHO // 2 - t.get_width() // 2, 70))
+    s = f_c.render("un enemigo que aprendió a pelear con un algoritmo genético", True, GRIS)
+    pantalla.blit(s, (ANCHO // 2 - s.get_width() // 2, 130))
+    for col, (titulo, items, sel, color, tecla) in enumerate([
+            ("JEFE", jefes, ij, NARANJA, "↑ ↓"), ("HÉROE", heroes, ih, AZUL, "← →")]):
+        x = 90 + col * 300
+        pantalla.blit(f_m.render(f"{titulo}  ({tecla})", True, color), (x, 200))
+        for i, (nombre, _) in enumerate(items):
+            c = BLANCO if i == sel else (90, 90, 105)
+            pantalla.blit(f_m.render(("▶ " if i == sel else "   ") + nombre, True, c), (x, 245 + i * 34))
+    ayuda = ["Enter: pelear    E: ver la evolución en vivo    Esc: salir",
+             "En combate: WASD + mouse, clic/espacio dispara, R reinicia, P pausa, S sonido",
+             "Mirando bots: + / - cambia la velocidad"]
+    for i, a in enumerate(ayuda):
+        t = f_c.render(a, True, GRIS)
+        pantalla.blit(t, (ANCHO // 2 - t.get_width() // 2, ALTO - 120 + i * 24))
+    if marcador:
+        t = f_c.render("Tu marcador: " + "   ".join(f"{k}: {v[0]}-{v[1]}" for k, v in marcador.items()), True, BLANCO)
+        pantalla.blit(t, (ANCHO // 2 - t.get_width() // 2, ALTO - 170))
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--gen", type=int, default=None, help="generación (por defecto: el campeón)")
-    ap.add_argument("--bot", choices=list(TODOS), default=None,
-                    help="en vez de jugar vos, mirar al jefe contra un héroe bot")
+    ap.add_argument("--gen", type=int, default=None, help="jugar directo contra el mejor jefe de esa generación")
+    ap.add_argument("--bot", choices=list(TODOS), default=None, help="mirar directo al campeón contra ese bot")
     ap.add_argument("--cuadros", type=int, default=0, help="(pruebas) cerrar tras N cuadros")
     args = ap.parse_args()
 
-    if args.gen is None:
-        genoma, nombre = np.load(R / "campeon.npy"), "Campeón"
-    else:
-        genoma, nombre = np.load(R / "mejores_por_generacion.npy")[args.gen - 1], f"Generación {args.gen}"
-    red = RedesEnLote(genoma, [0])
-
     pygame.init()
-    pantalla = pygame.display.set_mode((LADO, LADO + 50))
-    pygame.display.set_caption(f"Jefe evolutivo - {nombre}")
+    pantalla = pygame.display.set_mode((ANCHO, ALTO))
+    pygame.display.set_caption("Jefe evolutivo")
     reloj = pygame.time.Clock()
-    letra = pygame.font.SysFont(None, 26)
-    p = lambda x, y: (int(x * LADO), int(50 + (1 - y) * LADO))
+    fuentes = (pygame.font.SysFont("DejaVu Sans", 46, bold=True), pygame.font.SysFont("DejaVu Sans", 20),
+               pygame.font.SysFont("DejaVu Sans", 15))
+    sonidos = Sonidos()
+    escena = Escena(LADO, (10, 10), sonidos)
+    jefes, heroes = cargar_jefes(), cargar_heroes()
+    en_vivo = None                                                # proceso de en_vivo.py, si está abierto
+    ij, ih, marcador = 2, 0, {}
+    combate, pausa, velocidad, cuadro = None, False, 1, 0
 
-    def nueva():
-        rng = np.random.default_rng()
-        return Arena(1, rng), (HeroeBot([args.bot], rng) if args.bot else None)
+    if args.gen is not None:
+        g = np.load(R / "mejores_por_generacion.npy")[args.gen - 1]
+        combate = Combate((f"Generación {args.gen}", g), heroes[0], escena)
+    elif args.bot:
+        combate = Combate(jefes[2], (f"Bot {args.bot}", args.bot), escena)
 
-    ar, bot = nueva()
-    if args.bot:
-        nombre += f" vs. bot «{args.bot}»"
-    mensaje, cuadro = "", 0
     while True:
         for ev in pygame.event.get():
-            if ev.type == pygame.QUIT or (ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE):
+            if ev.type == pygame.QUIT:
                 pygame.quit(); return
-            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_r:
-                (ar, bot), mensaje = nueva(), ""
+            if ev.type != pygame.KEYDOWN:
+                continue
+            if combate is None:                                   # --- menú
+                if ev.key == pygame.K_ESCAPE:
+                    pygame.quit(); return
+                if ev.key == pygame.K_UP: ij = (ij - 1) % len(jefes)
+                if ev.key == pygame.K_DOWN: ij = (ij + 1) % len(jefes)
+                if ev.key == pygame.K_LEFT: ih = (ih - 1) % len(heroes)
+                if ev.key == pygame.K_RIGHT: ih = (ih + 1) % len(heroes)
+                if ev.key == pygame.K_e and en_vivo is None:
+                    en_vivo = subprocess.Popen([sys.executable, str(Path(__file__).parent / "en_vivo.py")])
+                if ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                    combate, velocidad = Combate(jefes[ij], heroes[ih], escena), 1
+            else:                                                 # --- combate
+                if ev.key == pygame.K_ESCAPE: combate = None
+                elif ev.key == pygame.K_r or (ev.key == pygame.K_RETURN and combate.resultado):
+                    combate = Combate(combate.jefe, combate.heroe, escena)
+                elif ev.key == pygame.K_p: pausa = not pausa
+                elif ev.key == pygame.K_s: sonidos.activo = not sonidos.activo
+                elif ev.key in (pygame.K_PLUS, pygame.K_KP_PLUS, pygame.K_EQUALS) and not combate.humano:
+                    velocidad = min(8, velocidad * 2)
+                elif ev.key in (pygame.K_MINUS, pygame.K_KP_MINUS) and not combate.humano:
+                    velocidad = max(1, velocidad // 2)
 
-        if ar.activa[0] and bot is not None:
-            ar.paso(red(ar.observar()), bot(ar))
-            if not ar.activa[0]:
-                r = ar.resultados()
-                mensaje = ("Ganó el bot" if r["gana_heroe"][0] else
-                           "Ganó el jefe" if r["gana_jefe"][0] else "Tiempo agotado") + "  (R para repetir)"
-        elif ar.activa[0]:
-            k = pygame.key.get_pressed()
-            vx = (k[pygame.K_d] or k[pygame.K_RIGHT]) - (k[pygame.K_a] or k[pygame.K_LEFT])
-            vy = (k[pygame.K_w] or k[pygame.K_UP]) - (k[pygame.K_s] or k[pygame.K_DOWN])
-            mx, my = pygame.mouse.get_pos()
-            objetivo = (mx / LADO, 1 - (my - 50) / LADO)
-            ang = np.arctan2(objetivo[1] - ar.hy[0], objetivo[0] - ar.hx[0])
-            disparar = pygame.mouse.get_pressed()[0] or k[pygame.K_SPACE]
-            cmd = {"vx": np.array([float(vx)]), "vy": np.array([float(vy)]),
-                   "disparar": np.array([bool(disparar)]), "angulo": np.array([ang])}
-            ar.paso(red(ar.observar()), cmd)
-            if not ar.activa[0]:
-                r = ar.resultados()
-                mensaje = ("¡Ganaste!" if r["gana_heroe"][0] else
-                           "El jefe te venció" if r["gana_jefe"][0] else "Tiempo agotado") + "  (R para reintentar)"
-
-        f = ar.foto(0)
-        pantalla.fill((24, 24, 30))
-        pantalla.blit(letra.render(f"{nombre}   t={f['t'] / C.PASOS_POR_SEGUNDO:4.1f}s   {mensaje}",
-                                   True, (230, 230, 230)), (10, 6))
-        for i, (v, col) in enumerate([(f["jvida"], (235, 104, 52)), (f["hvida"], (90, 160, 240))]):
-            pygame.draw.rect(pantalla, col, (10 + i * 320, 32, int(300 * v), 10))
-        for x, y in f["balas_jefe"]:
-            pygame.draw.circle(pantalla, (255, 140, 100), p(x, y), 5)
-        for x, y in f["balas_heroe"]:
-            pygame.draw.circle(pantalla, (170, 210, 255), p(x, y), 3)
-        pygame.draw.circle(pantalla, (90, 160, 240), p(*f["heroe"]), int(C.HEROE_RADIO * LADO))
-        pygame.draw.circle(pantalla, (255, 210, 90) if f["embistiendo"] else (235, 104, 52),
-                           p(*f["jefe"]), int(C.JEFE_RADIO * LADO))
+        if en_vivo is not None and en_vivo.poll() is not None:   # se cerró: cargar sus campeones
+            en_vivo = None
+            jefes, heroes = cargar_jefes(), cargar_heroes()
+            ij, ih = min(ij, len(jefes) - 1), min(ih, len(heroes) - 1)
+        if combate is None:
+            dibujar_menu(pantalla, fuentes, jefes, heroes, ij, ih, marcador)
+        else:
+            if not pausa:
+                antes = combate.resultado
+                for _ in range(velocidad):
+                    combate.paso()
+                if antes is None and combate.resultado and combate.humano:
+                    m = marcador.setdefault(combate.nombre_j.split(" ·")[0], [0, 0])
+                    m[0 if combate.resultado == "heroe" else 1] += 1
+            pantalla.fill((8, 8, 12))
+            f = combate.ar.foto(0)
+            sub = combate.mensaje() or ("PAUSA" if pausa else "")
+            escena.dibujar(pantalla, f, titulo=f"{combate.nombre_j}  vs.  {combate.nombre_h}"
+                           + (f"   x{velocidad}" if velocidad > 1 else ""),
+                           subtitulo=sub, nombres=("Jefe", "Jugador" if combate.humano else "Héroe"))
+            ayuda = "R: otra vez   Esc: menú" if combate.resultado else \
+                ("WASD + mouse · clic dispara · P pausa · S sonido · Esc menú" if combate.humano
+                 else "+/- velocidad · P pausa · S sonido · Esc menú")
+            t = fuentes[2].render(ayuda, True, GRIS)
+            pantalla.blit(t, (ANCHO // 2 - t.get_width() // 2, ALTO - 22))
         pygame.display.flip()
         reloj.tick(C.PASOS_POR_SEGUNDO)
         cuadro += 1
         if args.cuadros and cuadro >= args.cuadros:
+            if os.environ.get("CAPTURA"):
+                pygame.image.save(pantalla, os.environ["CAPTURA"])
             pygame.quit(); return
 
 
