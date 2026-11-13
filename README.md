@@ -60,13 +60,33 @@ porque la aptitud en la coevolución es relativa.
 
 ![Coevolución](resultados/coevolucion/coevolucion.png)
 
+## Jefe final y revancha
+
+`entrenar_jefe_final.py` sigue entrenando al jefe (ajuste fino, con mutación suave) contra los bots
+y contra héroes coevolucionados de distintas generaciones. Contra el héroe coevolucionado final, que
+no vio, gana el 80 % de las veces (el campeón, el 55 %).
+
+Jugando, encontré una debilidad: si mantenés distancia, rodeás al jefe y te corrés de costado antes
+de la embestida, el jefe no tiene respuesta. Esa estrategia es el bot `kiteador`, que le gana al
+campeón el 100 % de las veces. `python entrenar_jefe_final.py --extra kiteador --salida revancha`
+entrena al jefe sumando ese bot como rival: aprende a ganarle el 47 % de las veces, a costa de rendir
+peor contra los demás héroes.
+
 ## Jugar
 
-`./jugar.sh` (o `python jugar.py`) abre un menú para elegir el jefe (fácil = generación 1, medio = generación 50,
-difícil = campeón, coevolucionado) y quién pelea (jugador, un bot o el héroe coevolucionado).
-Desde el menú, la tecla **E** abre la coevolución en vivo. Cuando jugás vos, el combate dura 60 s y tus balas hacen más daño que las de los bots.
+`./jugar.sh` (o `python jugar.py`) abre un menú con tres opciones:
 
-Los bots disponibles son `agresivo`, `francotirador`, `escurridizo` (entrenamiento) e `impredecible` (prueba).
+- **Jugar:** elegís la dificultad. Fácil = jefe de la generación 1, Medio = generación 50,
+  Difícil = campeón, Revancha = jefe entrenado contra la estrategia de "kitear" (ver abajo).
+- **Mirar una pelea:** combates armados entre jefes y héroes (recién nacido vs. bot, campeón vs. bot,
+  campeón vs. kiteador, revancha vs. kiteador, coevolucionados).
+- **Ver la evolución en vivo:** abre `en_vivo.py`.
+
+Cuando jugás vos, el combate dura 60 s y tus balas hacen más daño que las de los bots.
+
+El sonido se activa o desactiva con **M**. En WSL hace falta la biblioteca de PulseAudio (`sudo apt install libpulse0`); sin ella el juego anda igual, en silencio.
+
+Los bots disponibles son `agresivo`, `francotirador`, `escurridizo` (entrenamiento), `impredecible` (prueba) y `kiteador`.
 El balance original está calibrado para los bots, que disparan sin pausa y apuntan muy bien; por eso el
 modo humano tiene sus propias reglas (`HUMANO_*` en `jefe/config.py`).
 

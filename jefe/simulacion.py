@@ -64,3 +64,14 @@ def combatir_politicas(politica_jefe, politica_heroe, b, rng, grabar=False, cada
     res = ar.resultados()
     res["aptitud"] = aptitud(res)
     return (res, fotos) if grabar else res
+
+
+def evaluar_contra_redes(genomas, heroes, repeticiones, rng):
+    """Cada jefe pelea `repeticiones` veces contra cada héroe-red. Devuelve métricas por jefe."""
+    genomas, heroes = np.atleast_2d(genomas), np.atleast_2d(heroes)
+    p, h = len(genomas), len(heroes)
+    n = h * repeticiones
+    idx_j = np.repeat(np.arange(p), n)
+    idx_h = np.tile(np.repeat(np.arange(h), repeticiones), p)
+    res = combatir_politicas(politica_red(genomas, idx_j), politica_heroe_red(heroes, idx_h), p * n, rng)
+    return {k: np.asarray(v, dtype=float).reshape(p, n) for k, v in res.items()}

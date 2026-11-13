@@ -11,14 +11,22 @@ import numpy as np
 from . import config as C
 
 ENTRENAMIENTO = {
-    "agresivo":      dict(dist=0.22, ruido=0.10, esquiva=0.5, anticipa=0.0, cambio=0.010),
-    "francotirador": dict(dist=0.55, ruido=0.05, esquiva=0.8, anticipa=1.0, cambio=0.020),
-    "escurridizo":   dict(dist=0.38, ruido=0.14, esquiva=1.2, anticipa=0.0, cambio=0.050),
+    "agresivo":      dict(dist=0.22, ruido=0.10, esquiva=0.5, anticipa=0.0, cambio=0.010, huye=0.0),
+    "francotirador": dict(dist=0.55, ruido=0.05, esquiva=0.8, anticipa=1.0, cambio=0.020, huye=0.0),
+    "escurridizo":   dict(dist=0.38, ruido=0.14, esquiva=1.2, anticipa=0.0, cambio=0.050, huye=0.0),
 }
 PRUEBA = {
-    "impredecible":  dict(dist=0.32, ruido=0.07, esquiva=1.0, anticipa=1.0, cambio=0.080),
+    "impredecible":  dict(dist=0.32, ruido=0.07, esquiva=1.0, anticipa=1.0, cambio=0.080, huye=0.0),
 }
-TODOS = {**ENTRENAMIENTO, **PRUEBA}
+TODOS = {**ENTRENAMIENTO, **PRUEBA}          # los 4 héroes del informe
+
+# Bot agregado después de jugar: imita la estrategia que le ganó al campeón
+# (mantener distancia, alejarse en diagonal cuando el jefe se acerca o embiste,
+# y apuntar con precisión anticipando su movimiento).
+NUEVOS = {
+    "kiteador":      dict(dist=0.55, ruido=0.03, esquiva=1.0, anticipa=1.0, cambio=0.020, huye=1.0),
+}
+HEROES = {**TODOS, **NUEVOS}
 
 
 class HeroeBot:
@@ -27,7 +35,7 @@ class HeroeBot:
     def __init__(self, estilos, rng):
         self.rng = rng
         b = len(estilos)
-        p = {k: np.array([TODOS[e][k] for e in estilos], dtype=float) for k in TODOS["agresivo"]}
+        p = {k: np.array([HEROES[e][k] for e in estilos], dtype=float) for k in HEROES["agresivo"]}
         p["dist"] = p["dist"] + rng.uniform(-0.04, 0.04, b)    # cada partida es un poco distinta
         self.p = p
         self.lado = rng.choice([-1.0, 1.0], b)                  # sentido en que rodea al jefe
@@ -61,6 +69,27 @@ class HeroeBot:
         emb = (ar.emb_t > 0) & (dist < 0.35)
         vx = vx + emb * p["esquiva"] * 2 * (-ar.emb_dy) * self.lado
         vy = vy + emb * p["esquiva"] * 2 * (ar.emb_dx) * self.lado
+
+        # 3b) Kitear: rodear al jefe a distancia (girando hacia el centro de la arena
+        #     para no quedar acorralado) y correrse de costado cuando embiste.
+        if p["huye"].any():
+            tx, ty = -uy * self.lado, ux * self.lado                # dirección tangencial
+            hacia_pared = (tx * (0.5 - ar.hx) + ty * (0.5 - ar.hy) < 0) & \
+                          (np.hypot(ar.hx - 0.5, ar.hy - 0.5) > 0.28)
+            self.lado = np.where((p["huye"] > 0) & hacia_pared, -self.lado, self.lado)
+            tx, ty = -uy * self.lado, ux * self.lado
+            radial_k = np.clip((dist - p["dist"]) * 6, -1, 1)
+            kx, ky = tx + ux * radial_k, ty + uy * radial_k
+            # Embestida: salir de la línea recta del ataque
+            rx, ry = ar.hx - ar.jx, ar.hy - ar.jy
+            lado_linea = np.sign(rx * -ar.emb_dy + ry * ar.emb_dx) + (rx * -ar.emb_dy + ry * ar.emb_dx == 0)
+            amenaza = (ar.emb_t > 0) | ((ar.emb_cd == 0) & (dist < 0.42))
+            px_, py_ = np.where(ar.emb_t > 0, -ar.emb_dy, -uy), np.where(ar.emb_t > 0, ar.emb_dx, ux)
+            sgn = np.where(ar.emb_t > 0, lado_linea, self.lado)
+            kx = kx + amenaza * 2.5 * px_ * sgn
+            ky = ky + amenaza * 2.5 * py_ * sgn
+            vx = np.where(p["huye"] > 0, kx, vx)
+            vy = np.where(p["huye"] > 0, ky, vy)
 
         # 4) No quedar pegado a las paredes
         vx = vx + np.clip((0.12 - ar.hx) * 10, 0, 1) - np.clip((ar.hx - 0.88) * 10, 0, 1)
