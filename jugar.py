@@ -4,9 +4,9 @@
     python jugar.py --gen 1               # directo contra el jefe de la generación 1
     python jugar.py --bot escurridizo     # directo: campeón vs. bot
 
-Menú: ↑/↓ elige el jefe, ←/→ elige quién pelea, Enter empieza.
+Menú: ↑/↓ y Enter para elegir, Esc para volver.
 En combate: WASD/flechas para moverte, mouse para apuntar, clic o espacio para
-disparar. R reinicia, P pausa, S sonido, +/- velocidad (al mirar), Esc vuelve al menú.
+disparar. R reinicia, P pausa, M sonido, +/- velocidad (al mirar), Esc vuelve al menú.
 
 Cuando jugás vos, el combate dura 60 s y tus balas pegan más fuerte que las de
 los bots: el balance original está pensado para bots, que apuntan casi perfecto.
@@ -22,7 +22,7 @@ import pygame
 
 from jefe import config as C
 from jefe.arena import Arena
-from jefe.jugadores import TODOS, HeroeBot
+from jefe.jugadores import HEROES, HeroeBot
 from jefe.red import RedesEnLote
 from jefe.render import AZUL, BLANCO, GRIS, NARANJA, Escena, Sonidos
 from jefe.simulacion import politica_heroe_red
@@ -32,25 +32,39 @@ LADO = 700
 ANCHO, ALTO = LADO + 20, LADO + 60
 
 
-def cargar_jefes():
+def _cargar(*partes):
+    archivo = R.joinpath(*partes)
+    return np.load(archivo) if archivo.exists() else None
+
+
+def opciones():
+    """Arma las tres pantallas del menú con lo que haya entrenado en resultados/."""
     mejores = np.load(R / "mejores_por_generacion.npy")
-    jefes = [("Fácil · generación 1", mejores[0]),
-             ("Medio · generación 50", mejores[min(49, len(mejores) - 1)]),
-             ("Difícil · campeón", np.load(R / "campeon.npy"))]
-    for carpeta, nombre in (("coevolucion", "Coevolucionado"), ("en_vivo", "Tu evolución en vivo")):
-        archivo = R / carpeta / "jefe_final.npy"
-        if archivo.exists():
-            jefes.append((nombre, np.load(archivo)))
-    return jefes
+    gen1, gen50, campeon = mejores[0], mejores[min(49, len(mejores) - 1)], np.load(R / "campeon.npy")
+    revancha = _cargar("revancha", "jefe_final.npy")
+    jugador = ("Jugador", None)
 
+    jugar = [("Fácil", "el jefe recién nacido (generación 1)", ("Fácil", gen1), jugador),
+             ("Medio", "el jefe de la generación 50", ("Medio", gen50), jugador),
+             ("Difícil", "el campeón (generación 200)", ("Difícil", campeon), jugador)]
+    if revancha is not None:
+        jugar.append(("Revancha", "entrenado contra la estrategia de kitear", ("Revancha", revancha), jugador))
 
-def cargar_heroes():
-    heroes = [("Jugador", None)] + [(f"Bot {e}", e) for e in TODOS]
-    for carpeta, nombre in (("coevolucion", "Héroe coevolucionado"), ("en_vivo", "Héroe de tu evolución")):
-        archivo = R / carpeta / "heroe_final.npy"
-        if archivo.exists():
-            heroes.append((nombre, np.load(archivo)))
-    return heroes
+    bot = lambda e: (f"Bot {e}", e)
+    mirar = [("Recién nacido vs. bot", "así pelea sin entrenar", ("Generación 1", gen1), bot("escurridizo")),
+             ("Campeón vs. bot", "el mismo rival, 200 generaciones después", ("Campeón", campeon), bot("escurridizo")),
+             ("Campeón vs. kiteador", "la debilidad que encontré jugando", ("Campeón", campeon), bot("kiteador"))]
+    if revancha is not None:
+        mirar.append(("Revancha vs. kiteador", "el jefe que aprendió a enfrentarla", ("Revancha", revancha), bot("kiteador")))
+    for carpeta, titulo, desc in (("coevolucion", "Coevolucionados", "jefe y héroe que aprendieron juntos"),
+                                  ("en_vivo", "Tu evolución en vivo", "los campeones de tu última corrida")):
+        j, h = _cargar(carpeta, "jefe_final.npy"), _cargar(carpeta, "heroe_final.npy")
+        if j is not None and h is not None:
+            mirar.append((titulo, desc, ("Jefe " + titulo.lower(), j), ("Héroe", h)))
+    principal = [("Jugar", "enfrentá al jefe con teclado y mouse", "jugar", None),
+                 ("Mirar una pelea", "peleas entre jefes y héroes que aprendieron solos", "mirar", None),
+                 ("Ver la evolución en vivo", "jefes y héroes aprenden mientras mirás", "en_vivo", None)]
+    return {"principal": principal, "jugar": jugar, "mirar": mirar}
 
 
 def comando_humano(ar):
@@ -100,35 +114,38 @@ class Combate:
         return {"heroe": "GANA EL HÉROE", "jefe": "GANA EL JEFE", "empate": "TIEMPO"}[self.resultado]
 
 
-def dibujar_menu(pantalla, fuentes, jefes, heroes, ij, ih, marcador):
+TITULOS = {"principal": "", "jugar": "ELEGÍ LA DIFICULTAD", "mirar": "ELEGÍ UNA PELEA"}
+
+
+def dibujar_menu(pantalla, fuentes, pantalla_menu, items, sel, marcador):
     f_t, f_m, f_c = fuentes
     pantalla.fill((14, 14, 20))
     t = f_t.render("JEFE EVOLUTIVO", True, NARANJA)
     pantalla.blit(t, (ANCHO // 2 - t.get_width() // 2, 70))
-    s = f_c.render("un enemigo que aprendió a pelear con un algoritmo genético", True, GRIS)
-    pantalla.blit(s, (ANCHO // 2 - s.get_width() // 2, 130))
-    for col, (titulo, items, sel, color, tecla) in enumerate([
-            ("JEFE", jefes, ij, NARANJA, "↑ ↓"), ("HÉROE", heroes, ih, AZUL, "← →")]):
-        x = 90 + col * 300
-        pantalla.blit(f_m.render(f"{titulo}  ({tecla})", True, color), (x, 200))
-        for i, (nombre, _) in enumerate(items):
-            c = BLANCO if i == sel else (90, 90, 105)
-            pantalla.blit(f_m.render(("▶ " if i == sel else "   ") + nombre, True, c), (x, 245 + i * 34))
-    ayuda = ["Enter: pelear    E: ver la evolución en vivo    Esc: salir",
-             "En combate: WASD + mouse, clic/espacio dispara, R reinicia, P pausa, S sonido",
-             "Mirando bots: + / - cambia la velocidad"]
-    for i, a in enumerate(ayuda):
-        t = f_c.render(a, True, GRIS)
-        pantalla.blit(t, (ANCHO // 2 - t.get_width() // 2, ALTO - 120 + i * 24))
-    if marcador:
-        t = f_c.render("Tu marcador: " + "   ".join(f"{k}: {v[0]}-{v[1]}" for k, v in marcador.items()), True, BLANCO)
-        pantalla.blit(t, (ANCHO // 2 - t.get_width() // 2, ALTO - 170))
+    sub = TITULOS[pantalla_menu] or "un enemigo que aprendió a pelear con un algoritmo genético"
+    s = f_c.render(sub, True, AZUL if TITULOS[pantalla_menu] else GRIS)
+    pantalla.blit(s, (ANCHO // 2 - s.get_width() // 2, 132))
+    y = 210
+    for i, (titulo, desc, *_ ) in enumerate(items):
+        activo = i == sel
+        if activo:
+            pygame.draw.rect(pantalla, (30, 30, 42), (110, y - 8, ANCHO - 220, 60), border_radius=10)
+            pygame.draw.rect(pantalla, NARANJA, (110, y - 8, 5, 60), border_radius=3)
+        pantalla.blit(f_m.render(titulo, True, BLANCO if activo else (150, 150, 165)), (135, y))
+        pantalla.blit(f_c.render(desc, True, GRIS if activo else (90, 90, 105)), (135, y + 27))
+        y += 70
+    if pantalla_menu == "jugar" and marcador:
+        t = f_c.render("Tu marcador: " + "   ".join(f"{k} {v[0]}-{v[1]}" for k, v in marcador.items()), True, BLANCO)
+        pantalla.blit(t, (ANCHO // 2 - t.get_width() // 2, ALTO - 110))
+    ayuda = "↑ ↓ elegir    Enter aceptar    " + ("Esc salir" if pantalla_menu == "principal" else "Esc volver")
+    t = f_c.render(ayuda, True, GRIS)
+    pantalla.blit(t, (ANCHO // 2 - t.get_width() // 2, ALTO - 60))
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--gen", type=int, default=None, help="jugar directo contra el mejor jefe de esa generación")
-    ap.add_argument("--bot", choices=list(TODOS), default=None, help="mirar directo al campeón contra ese bot")
+    ap.add_argument("--bot", choices=list(HEROES), default=None, help="mirar directo al campeón contra ese bot")
     ap.add_argument("--cuadros", type=int, default=0, help="(pruebas) cerrar tras N cuadros")
     args = ap.parse_args()
 
@@ -140,16 +157,16 @@ def main():
                pygame.font.SysFont("DejaVu Sans", 15))
     sonidos = Sonidos()
     escena = Escena(LADO, (10, 10), sonidos)
-    jefes, heroes = cargar_jefes(), cargar_heroes()
+    menus = opciones()
+    menu, sel, marcador = "principal", 0, {}
     en_vivo = None                                                # proceso de en_vivo.py, si está abierto
-    ij, ih, marcador = 2, 0, {}
     combate, pausa, velocidad, cuadro = None, False, 1, 0
 
     if args.gen is not None:
         g = np.load(R / "mejores_por_generacion.npy")[args.gen - 1]
-        combate = Combate((f"Generación {args.gen}", g), heroes[0], escena)
+        combate = Combate((f"Generación {args.gen}", g), ("Jugador", None), escena)
     elif args.bot:
-        combate = Combate(jefes[2], (f"Bot {args.bot}", args.bot), escena)
+        combate = Combate(("Campeón", np.load(R / "campeon.npy")), (f"Bot {args.bot}", args.bot), escena)
 
     while True:
         for ev in pygame.event.get():
@@ -158,22 +175,28 @@ def main():
             if ev.type != pygame.KEYDOWN:
                 continue
             if combate is None:                                   # --- menú
+                items = menus[menu]
                 if ev.key == pygame.K_ESCAPE:
-                    pygame.quit(); return
-                if ev.key == pygame.K_UP: ij = (ij - 1) % len(jefes)
-                if ev.key == pygame.K_DOWN: ij = (ij + 1) % len(jefes)
-                if ev.key == pygame.K_LEFT: ih = (ih - 1) % len(heroes)
-                if ev.key == pygame.K_RIGHT: ih = (ih + 1) % len(heroes)
-                if ev.key == pygame.K_e and en_vivo is None:
-                    en_vivo = subprocess.Popen([sys.executable, str(Path(__file__).parent / "en_vivo.py")])
-                if ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-                    combate, velocidad = Combate(jefes[ij], heroes[ih], escena), 1
+                    if menu == "principal":
+                        pygame.quit(); return
+                    menu, sel = "principal", 0
+                elif ev.key in (pygame.K_UP, pygame.K_w): sel = (sel - 1) % len(items)
+                elif ev.key in (pygame.K_DOWN, pygame.K_s): sel = (sel + 1) % len(items)
+                elif ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                    _, _, a, b = items[sel]
+                    if menu != "principal":
+                        combate, velocidad = Combate(a, b, escena), 1
+                    elif a == "en_vivo":
+                        if en_vivo is None:
+                            en_vivo = subprocess.Popen([sys.executable, str(Path(__file__).parent / "en_vivo.py")])
+                    else:
+                        menu, sel = a, 0
             else:                                                 # --- combate
                 if ev.key == pygame.K_ESCAPE: combate = None
                 elif ev.key == pygame.K_r or (ev.key == pygame.K_RETURN and combate.resultado):
                     combate = Combate(combate.jefe, combate.heroe, escena)
                 elif ev.key == pygame.K_p: pausa = not pausa
-                elif ev.key == pygame.K_s: sonidos.activo = not sonidos.activo
+                elif ev.key == pygame.K_m: sonidos.activo = not sonidos.activo
                 elif ev.key in (pygame.K_PLUS, pygame.K_KP_PLUS, pygame.K_EQUALS) and not combate.humano:
                     velocidad = min(8, velocidad * 2)
                 elif ev.key in (pygame.K_MINUS, pygame.K_KP_MINUS) and not combate.humano:
@@ -181,17 +204,17 @@ def main():
 
         if en_vivo is not None and en_vivo.poll() is not None:   # se cerró: cargar sus campeones
             en_vivo = None
-            jefes, heroes = cargar_jefes(), cargar_heroes()
-            ij, ih = min(ij, len(jefes) - 1), min(ih, len(heroes) - 1)
+            menus = opciones()
+            sel = min(sel, len(menus[menu]) - 1)
         if combate is None:
-            dibujar_menu(pantalla, fuentes, jefes, heroes, ij, ih, marcador)
+            dibujar_menu(pantalla, fuentes, menu, menus[menu], sel, marcador)
         else:
             if not pausa:
                 antes = combate.resultado
                 for _ in range(velocidad):
                     combate.paso()
                 if antes is None and combate.resultado and combate.humano:
-                    m = marcador.setdefault(combate.nombre_j.split(" ·")[0], [0, 0])
+                    m = marcador.setdefault(combate.nombre_j, [0, 0])
                     m[0 if combate.resultado == "heroe" else 1] += 1
             pantalla.fill((8, 8, 12))
             f = combate.ar.foto(0)
@@ -199,9 +222,9 @@ def main():
             escena.dibujar(pantalla, f, titulo=f"{combate.nombre_j}  vs.  {combate.nombre_h}"
                            + (f"   x{velocidad}" if velocidad > 1 else ""),
                            subtitulo=sub, nombres=("Jefe", "Jugador" if combate.humano else "Héroe"))
-            ayuda = "R: otra vez   Esc: menú" if combate.resultado else \
-                ("WASD + mouse · clic dispara · P pausa · S sonido · Esc menú" if combate.humano
-                 else "+/- velocidad · P pausa · S sonido · Esc menú")
+            ayuda = "R: otra vez   Esc: volver" if combate.resultado else \
+                ("WASD + mouse · clic dispara · P pausa · M sonido · Esc volver" if combate.humano
+                 else "+/- velocidad · P pausa · M sonido · Esc volver")
             t = fuentes[2].render(ayuda, True, GRIS)
             pantalla.blit(t, (ANCHO // 2 - t.get_width() // 2, ALTO - 22))
         pygame.display.flip()

@@ -6,7 +6,7 @@
 A la izquierda: el mejor jefe contra el mejor héroe de la última generación.
 A la derecha: cómo va la "carrera armamentista".
 Espacio pausa el entrenamiento, +/- cambia la velocidad del combate, N salta al
-último campeón, S sonido, Esc sale. Guarda en resultados/en_vivo/ y esos campeones aparecen en el menú de jugar.py.
+último campeón, M sonido, Esc sale. Guarda en resultados/en_vivo/ y esos campeones aparecen en el menú de jugar.py.
 """
 import argparse
 import os
@@ -110,7 +110,7 @@ def main():
                     velocidad = max(1, velocidad // 2)
                 elif ev.key == pygame.K_n and ultimo:
                     nuevo_combate()
-                elif ev.key == pygame.K_s:
+                elif ev.key == pygame.K_m:
                     sonidos.activo = not sonidos.activo
 
         try:
@@ -165,7 +165,7 @@ def main():
                 "Examen contra rivales fijos (progreso real)",
                 [("jefe vs. bots", [h["examen_jefe"] for h in historial], NARANJA),
                  ("héroe vs. jefe de reglas", [h["examen_heroe"] for h in historial], AZUL)], n)
-        ayuda = "Espacio: pausa   +/-: velocidad   N: último campeón   S: sonido   Esc: salir"
+        ayuda = "Espacio: pausa   +/-: velocidad   N: último campeón   M: sonido   Esc: salir"
         pantalla.blit(f_c.render(ayuda, True, GRIS), (x0, ALTO - 40))
 
         pygame.display.flip()
