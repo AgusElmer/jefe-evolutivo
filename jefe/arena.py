@@ -53,9 +53,11 @@ class Balas:
 
 
 class Arena:
-    def __init__(self, b, rng):
+    def __init__(self, b, rng, duracion=None, heroe_danio=None):
         self.b, self.rng = b, rng
         self.t = 0
+        self.duracion = duracion or C.DURACION_MAX
+        self.heroe_danio = heroe_danio or C.HEROE_BALA_DANIO
         # Jefe arriba, héroe abajo, con algo de variación
         self.jx = rng.uniform(0.3, 0.7, b)
         self.jy = rng.uniform(0.70, 0.85, b)
@@ -74,7 +76,7 @@ class Arena:
         self.balas_jefe = Balas(b)
         self.balas_heroe = Balas(b)
         self.activa = np.ones(b, dtype=bool)
-        self.fin = np.full(b, C.DURACION_MAX)
+        self.fin = np.full(b, self.duracion)
         # Estadísticas
         self.disparos_jefe = np.zeros(b)
         self.embestidas = np.zeros(b)
@@ -105,6 +107,30 @@ class Arena:
             np.where(self.j_disparo_cd == 0, 1.0, -1.0),
             self.jvida / C.JEFE_VIDA * 2 - 1,
             self.hvida / C.HEROE_VIDA * 2 - 1,
+        ], axis=1)
+
+    def observar_heroe(self):
+        """14 percepciones del héroe cuando es una red neuronal (coevolución)."""
+        dx, dy = self.jx - self.hx, self.jy - self.hy
+        dist = np.sqrt(dx * dx + dy * dy)
+        bj = self.balas_jefe
+        d2 = (bj.x - self.hx[:, None]) ** 2 + (bj.y - self.hy[:, None]) ** 2
+        d2 = np.where(bj.viva, d2, np.inf)
+        k = np.argmin(d2, axis=1)
+        f = np.arange(self.b)
+        hay = np.isfinite(d2[f, k])
+        bdx = np.where(hay, bj.x[f, k] - self.hx, 0.0)
+        bdy = np.where(hay, bj.y[f, k] - self.hy, 0.0)
+        bvx = np.where(hay, bj.vx[f, k] / C.JEFE_BALA_VEL, 0.0)
+        bvy = np.where(hay, bj.vy[f, k] / C.JEFE_BALA_VEL, 0.0)
+        return np.stack([
+            dx * 2, dy * 2, dist * 2 - 1,
+            np.clip(self.jvx / C.JEFE_VEL, -1, 1), np.clip(self.jvy / C.JEFE_VEL, -1, 1),
+            np.clip(bdx * 3, -1, 1), np.clip(bdy * 3, -1, 1), bvx, bvy,
+            self.hx * 2 - 1, self.hy * 2 - 1,
+            np.where(self.emb_t > 0, 1.0, -1.0),
+            self.hvida / C.HEROE_VIDA * 2 - 1,
+            self.jvida / C.JEFE_VIDA * 2 - 1,
         ], axis=1)
 
     # ------------------------------------------------------------ dinámica
@@ -164,7 +190,7 @@ class Arena:
 
         # --- Daño por balas
         danio_h = self.balas_jefe.impactos(self.hx, self.hy, C.HEROE_RADIO) * C.JEFE_BALA_DANIO
-        danio_j = self.balas_heroe.impactos(self.jx, self.jy, C.JEFE_RADIO) * C.HEROE_BALA_DANIO
+        danio_j = self.balas_heroe.impactos(self.jx, self.jy, C.JEFE_RADIO) * self.heroe_danio
 
         # --- Contacto cuerpo a cuerpo
         dx, dy = self.hx - self.jx, self.hy - self.jy
@@ -185,7 +211,7 @@ class Arena:
         self.h_disparo_cd = np.maximum(0, self.h_disparo_cd - 1)
 
         self.t += 1
-        termina = a & ((self.hvida <= 0) | (self.jvida <= 0) | (self.t >= C.DURACION_MAX))
+        termina = a & ((self.hvida <= 0) | (self.jvida <= 0) | (self.t >= self.duracion))
         self.fin = np.where(termina, self.t, self.fin)
         self.activa = a & ~termina
 
@@ -199,6 +225,7 @@ class Arena:
             "gana_jefe": (hv <= 0) & (jv > 0),
             "gana_heroe": (jv <= 0),
             "duracion": self.fin,
+            "duracion_max": np.full(self.b, self.duracion),
             "disparos": self.disparos_jefe,
             "embestidas": self.embestidas,
             "embestidas_acertadas": self.embestidas_acertadas,
@@ -209,6 +236,7 @@ class Arena:
         bj, bh = self.balas_jefe, self.balas_heroe
         return {
             "t": self.t,
+            "emb_dir": (self.emb_dx[k], self.emb_dy[k]),
             "jefe": (self.jx[k], self.jy[k]), "heroe": (self.hx[k], self.hy[k]),
             "jvida": max(self.jvida[k], 0) / C.JEFE_VIDA,
             "hvida": max(self.hvida[k], 0) / C.HEROE_VIDA,
@@ -221,6 +249,13 @@ class Arena:
 def aptitud(res):
     """Función de aptitud (fitness) de una partida, desde el punto de vista del jefe."""
     f = res["danio_hecho"] - C.PESO_DANIO_RECIBIDO * res["danio_recibido"] * (C.HEROE_VIDA / C.JEFE_VIDA)
-    rapidez = 1 - res["duracion"] / C.DURACION_MAX
+    rapidez = 1 - res["duracion"] / res.get("duracion_max", C.DURACION_MAX)
     f = f + res["gana_jefe"] * (C.PREMIO_VICTORIA + C.PREMIO_RAPIDEZ * rapidez)
     return f
+
+
+def aptitud_heroe(res):
+    """Aptitud del héroe: la misma idea que la del jefe, vista desde el otro lado."""
+    f = res["danio_recibido"] * (C.HEROE_VIDA / C.JEFE_VIDA) - C.PESO_DANIO_RECIBIDO * res["danio_hecho"]
+    rapidez = 1 - res["duracion"] / res.get("duracion_max", C.DURACION_MAX)
+    return f + res["gana_heroe"] * (C.PREMIO_VICTORIA + C.PREMIO_RAPIDEZ * rapidez)

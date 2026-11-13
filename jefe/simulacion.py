@@ -1,6 +1,8 @@
 """Funciones para correr combates completos."""
 import numpy as np
 
+from . import config as C
+
 from .arena import Arena, aptitud
 from .jugadores import HeroeBot
 from .red import RedesEnLote
@@ -37,3 +39,28 @@ def evaluar_genomas(genomas, estilos, repeticiones, rng):
     res = combatir(politica_red(genomas, idx), todos, rng)
     forma = (p, len(escenarios))
     return {k: np.asarray(v, dtype=float).reshape(forma) for k, v in res.items()}
+
+
+def politica_heroe_red(genomas, indice_por_partida):
+    """Convierte la salida de la red del héroe en un comando para la arena."""
+    from .red import HEROE
+    redes = RedesEnLote(genomas, indice_por_partida, HEROE)
+
+    def politica(ar):
+        o = redes(ar.observar_heroe())
+        base = np.arctan2(ar.jy - ar.hy, ar.jx - ar.hx)
+        return {"vx": o[:, 0], "vy": o[:, 1], "angulo": base + o[:, 2] * C.DESVIO_PUNTERIA, "disparar": o[:, 3] > 0}
+    return politica
+
+
+def combatir_politicas(politica_jefe, politica_heroe, b, rng, grabar=False, cada=2):
+    """Como combatir(), pero el héroe también lo maneja una política arbitraria."""
+    ar = Arena(b, rng)
+    fotos = []
+    while ar.activa.any():
+        if grabar and ar.t % cada == 0:
+            fotos.append(ar.foto(0))
+        ar.paso(politica_jefe(ar), politica_heroe(ar))
+    res = ar.resultados()
+    res["aptitud"] = aptitud(res)
+    return (res, fotos) if grabar else res

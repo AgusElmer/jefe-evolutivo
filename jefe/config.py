@@ -53,3 +53,16 @@ COMBATES_POR_RIVAL = 2                      # combates contra cada héroe de ent
 PREMIO_VICTORIA = 50.0
 PREMIO_RAPIDEZ = 30.0
 PESO_DANIO_RECIBIDO = 0.5
+
+# ---------------------------------------------------------------- Coevolución (héroes que también aprenden)
+HEROE_N_ENTRADAS = 14
+HEROE_N_OCULTAS = 12
+HEROE_N_SALIDAS = 4                         # mover x, mover y, ajuste de puntería, disparar
+COEVO_POBLACION = 60                        # por especie
+COEVO_RIVALES = 4                           # combates contra la población rival actual
+COEVO_SALON = 2                             # combates contra campeones históricos ("salón de la fama")
+COEVO_EXAMEN_CADA = 5                       # cada cuántas generaciones se mide contra rivales fijos
+
+# ---------------------------------------------------------------- Modo humano (jugar.py)
+HUMANO_DURACION = 60 * PASOS_POR_SEGUNDO    # una persona necesita más tiempo que un bot
+HUMANO_BALA_DANIO = 7.0
